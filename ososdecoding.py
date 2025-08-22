@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Simple interactive Universal Decoder & Hash Cracker
+Universal Decoder & Hash Cracker
 Prints 'OsOs' on start, tries many decodings and can crack common hashes using a wordlist.
-Supports: ASCII, Hex, Binary, Base64, Base32, URL, Quoted-Printable, HTML entities,
-Uuencoding, ROT13.
+Supports: ASCII, Hex, Binary, Base64, Base32, URL, Quoted-Printable, HTML entities, Uuencoding, ROT13.
 Cracks: md5, sha1, sha256, sha512, md5crypt, sha256_crypt, sha512_crypt, bcrypt, lm, ntlm, mysql5
 """
 
@@ -17,7 +16,6 @@ import hashlib
 import re
 import sys
 
-# try passlib for advanced hash types
 try:
     from passlib.hash import md5_crypt, sha256_crypt, sha512_crypt, bcrypt as passlib_bcrypt, lmhash, nthash
     PASSLIB = True
@@ -34,7 +32,7 @@ d88P" "Y88b               d88P" "Y88b
 Y88b. .d88P      X88      Y88b. .d88P      X88      
  "Y88888P"   88888P'       "Y88888P"   88888P'      
 
-           OsOs Decoder v1.0
+           OsOs Decoder v0.2
 """
 
 # ------------------ decoders ------------------
@@ -52,7 +50,7 @@ def decode_hex(text):
         s = re.sub(r'0x', '', text, flags=re.IGNORECASE)
         s = re.sub(r'[^0-9a-fA-F]', '', s)
         if len(s) % 2 != 0:
-            return None
+            s = '0' + s
         return bytes.fromhex(s).decode('utf-8')
     except:
         return None
@@ -62,9 +60,8 @@ def decode_binary(text):
         parts = re.split(r'[\s,]+', text.strip())
         if all(re.fullmatch(r'[01]{8,}', p) for p in parts):
             return ''.join(chr(int(p, 2)) for p in parts)
-        # try contiguous binary without spaces
-        if re.fullmatch(r'[01]+', text.strip()) and len(text.strip()) % 8 == 0:
-            s = text.strip()
+        s = re.sub(r'[^01]', '', text)
+        if len(s) % 8 == 0:
             return ''.join(chr(int(s[i:i+8], 2)) for i in range(0, len(s), 8))
     except:
         pass
@@ -72,13 +69,19 @@ def decode_binary(text):
 
 def decode_base64(text):
     try:
-        return base64.b64decode(text + '===').decode('utf-8')
+        s = re.sub(r'[^A-Za-z0-9+/=]', '', text)
+        padding_needed = (4 - len(s) % 4) % 4
+        s += '=' * padding_needed
+        return base64.b64decode(s).decode('utf-8')
     except:
         return None
 
 def decode_base32(text):
     try:
-        return base64.b32decode(text + '====').decode('utf-8')
+        s = re.sub(r'[^A-Z2-7=]', '', text.upper())
+        padding_needed = (8 - len(s) % 8) % 8
+        s += '=' * padding_needed
+        return base64.b32decode(s).decode('utf-8')
     except:
         return None
 
@@ -118,11 +121,9 @@ def decode_rot13(text):
 # ------------------ hash detection ------------------
 def detect_hash_type(h):
     h = h.strip()
-    # MySQL 5.x stored format: '*' + 40 hex (uppercase usually)
     if re.fullmatch(r'\*[0-9A-Fa-f]{40}', h):
         return 'mysql5'
-    # crypt prefixes
-    if h.startswith('$2'):  # bcrypt variants
+    if h.startswith('$2'):
         return 'bcrypt'
     if h.startswith('$1$'):
         return 'md5crypt'
@@ -130,9 +131,8 @@ def detect_hash_type(h):
         return 'sha256_crypt'
     if h.startswith('$6$'):
         return 'sha512_crypt'
-    # hex lengths
     if re.fullmatch(r'[0-9a-fA-F]{32}', h):
-        return 'ambiguous32'  # could be md5, ntlm, lm
+        return 'ambiguous32'
     if re.fullmatch(r'[0-9a-fA-F]{40}', h):
         return 'sha1'
     if re.fullmatch(r'[0-9a-fA-F]{64}', h):
@@ -141,13 +141,12 @@ def detect_hash_type(h):
         return 'sha512'
     return None
 
-# fallback NTLM calculation if passlib not present (uses md4)
 def ntlm_hash_of(pw):
     try:
         md4 = hashlib.new('md4')
         md4.update(pw.encode('utf-16le'))
         return md4.hexdigest()
-    except Exception:
+    except:
         return None
 
 # ------------------ cracking ------------------
@@ -176,20 +175,20 @@ def verify_ntlm(candidate, target):
     if PASSLIB:
         try:
             return nthash.verify(candidate, target)
-        except Exception:
+        except:
             pass
     try:
         md4 = hashlib.new('md4')
         md4.update(candidate.encode('utf-16le'))
         return md4.hexdigest().lower() == t
-    except Exception:
+    except:
         return False
 
 def verify_lm(candidate, target):
     if PASSLIB:
         try:
             return lmhash.verify(candidate, target)
-        except Exception:
+        except:
             pass
     return False
 
@@ -205,14 +204,13 @@ def verify_crypt(candidate, target, ctype):
             return sha512_crypt.verify(candidate, target)
         if ctype == 'bcrypt':
             return passlib_bcrypt.verify(candidate, target)
-    except Exception:
+    except:
         return False
     return False
 
 def crack_with_wordlist(target, wordlist_path, types_to_try=None, threads=8, limit=None):
     if types_to_try is None:
         types_to_try = []
-
     try:
         f = open(wordlist_path, 'r', encoding='utf-8', errors='ignore')
     except FileNotFoundError:
@@ -252,7 +250,7 @@ def crack_with_wordlist(target, wordlist_path, types_to_try=None, threads=8, lim
                         pool.shutdown(wait=False)
                         f.close()
                         return cand, typ
-                except Exception:
+                except:
                     futures.pop(fut, None)
     finally:
         pool.shutdown(wait=False)
@@ -289,7 +287,7 @@ def main():
             if res:
                 print(f"  - {name}: {res}")
                 any_found = True
-        except Exception:
+        except:
             pass
     if not any_found:
         print("  (no simple textual decoding found)")
@@ -313,7 +311,7 @@ def main():
                 types = [htype]
         want = input("Do you want to try cracking it with a wordlist now? (y/n): ").strip().lower()
         if want == 'y':
-            wl = input("Enter path to wordlist (e.g. /usr/share/wordlists/rockyou.txt): ").strip()
+            wl = input("Enter path to wordlist: ").strip()
             threads = input("Threads? [default 8]: ").strip()
             try:
                 threads = int(threads) if threads else 8
@@ -324,7 +322,7 @@ def main():
                 limit = int(limit) if limit else 0
             except:
                 limit = 0
-            print("[*] Starting cracking... (this may take time)")
+            print("[*] Starting cracking...")
             res = crack_with_wordlist(s, wl, types_to_try=types, threads=threads, limit=(limit or None))
             if res:
                 pw, used = res
@@ -358,8 +356,6 @@ def main():
             else:
                 print("[!] No match found in wordlist.")
     print("\nDone.")
-    return
 
 if __name__ == '__main__':
     main()
-
