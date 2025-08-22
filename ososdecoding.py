@@ -34,7 +34,7 @@ d88P" "Y88b               d88P" "Y88b
 Y88b. .d88P      X88      Y88b. .d88P      X88      
  "Y88888P"   88888P'       "Y88888P"   88888P'      
 
-           OsOs Decoder v0.1
+           OsOs Decoder v1.0
 """
 
 # ------------------ decoders ------------------
